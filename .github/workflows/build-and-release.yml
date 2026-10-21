@@ -11,16 +11,13 @@ on:
         options:
           - 'true'
           - 'false'
-  pull_request:
-    types: [labeled]
   push:
     branches:
-      - aae-v1.0-sleep-obfuscation
+      - master
 
 jobs:
   build-sliver:
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'build-sliver' || github.event_name == 'push'
 
     steps:
       - name: Free disk space
@@ -56,17 +53,12 @@ jobs:
           echo "Building commit: $ACTUAL_COMMIT"
           echo "Branch: ${{ github.ref_name }}"
 
-          # For aae-v1.0-sleep-obfuscation branch, verify expected commit
-          if [ "${{ github.ref_name }}" = "aae-v1.0-sleep-obfuscation" ]; then
-            EXPECTED_COMMIT="96f34bc5ef7a6c1da40f1b2d1be93b5911910cd8"
-            if [ "$ACTUAL_COMMIT" != "$EXPECTED_COMMIT" ]; then
-              echo "❌ ERROR: Commit mismatch on aae-v1.0-sleep-obfuscation!"
-              echo "Expected: $EXPECTED_COMMIT"
-              echo "Got:      $ACTUAL_COMMIT"
-              exit 1
-            fi
-            echo "✓ Verified aae-v1.0-sleep-obfuscation commit"
+          # Verify master contains the sleep obfuscation commit
+          if ! git merge-base --is-ancestor 96f34bc5ef7a6c1da40f1b2d1be93b5911910cd8 HEAD; then
+            echo "❌ ERROR: Sleep obfuscation commit (96f34bc5e) not in history"
+            exit 1
           fi
+          echo "✓ Verified sleep obfuscation code is present"
 
       - name: Build Sliver
         run: |
@@ -135,18 +127,13 @@ EOF
           retention-days: 90
 
       - name: Create GitHub Release
-        if: github.event_name == 'push' || github.event_name == 'pull_request' || inputs.create_release == 'true'
+        if: github.event_name == 'push' || inputs.create_release == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Determine release tag based on branch
-          if [ "${{ github.ref_name }}" = "aae-v1.0-sleep-obfuscation" ]; then
-            TAG="sliver-aae-v1.0"
-            TITLE="Sliver AAE v1.0 - Sleep Obfuscation"
-          else
-            TAG="sliver-$(git rev-parse --short HEAD)"
-            TITLE="Sliver Build - ${{ github.ref_name }}"
-          fi
+          # Building from master with sleep obfuscation
+          TAG="sliver-aae-v1.0"
+          TITLE="Sliver AAE v1.0 - Sleep Obfuscation"
 
           echo "Creating release: $TAG"
 
