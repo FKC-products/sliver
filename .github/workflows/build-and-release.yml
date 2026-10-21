@@ -1,0 +1,193 @@
+name: Build and Release Sliver Binaries
+
+on:
+  workflow_dispatch:  # Manual trigger
+    inputs:
+      create_release:
+        description: 'Create GitHub release with binaries'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+  pull_request:
+    types: [labeled]
+  push:
+    branches:
+      - aae-v1.0-sleep-obfuscation
+
+jobs:
+  build-sliver:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'build-sliver' || github.event_name == 'push'
+
+    steps:
+      - name: Free disk space
+        run: |
+          echo "Disk space before cleanup:"
+          df -h
+
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          docker system prune -af
+
+          echo "Disk space after cleanup:"
+          df -h
+
+      - name: Checkout Sliver
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            golang-go \
+            make \
+            mingw-w64 \
+            git \
+            ca-certificates
+
+      - name: Verify commit hash
+        run: |
+          ACTUAL_COMMIT=$(git rev-parse HEAD)
+          echo "Building commit: $ACTUAL_COMMIT"
+          echo "Branch: ${{ github.ref_name }}"
+
+          # For aae-v1.0-sleep-obfuscation branch, verify expected commit
+          if [ "${{ github.ref_name }}" = "aae-v1.0-sleep-obfuscation" ]; then
+            EXPECTED_COMMIT="96f34bc5ef7a6c1da40f1b2d1be93b5911910cd8"
+            if [ "$ACTUAL_COMMIT" != "$EXPECTED_COMMIT" ]; then
+              echo "❌ ERROR: Commit mismatch on aae-v1.0-sleep-obfuscation!"
+              echo "Expected: $EXPECTED_COMMIT"
+              echo "Got:      $ACTUAL_COMMIT"
+              exit 1
+            fi
+            echo "✓ Verified aae-v1.0-sleep-obfuscation commit"
+          fi
+
+      - name: Build Sliver
+        run: |
+          echo "Building Sliver with sleep obfuscation support..."
+          make
+
+          echo "✓ Build complete"
+          ls -lh sliver-server sliver-client
+
+      - name: Generate checksums and metadata
+        run: |
+          # Generate SHA256 checksums
+          sha256sum sliver-server sliver-client > checksums.txt
+
+          # Create metadata file
+          cat > metadata.txt <<EOF
+Sliver Binaries - AAE Custom Build
+===================================
+
+Source Repository: https://github.com/FKC-products/sliver
+Branch:            ${{ github.ref_name }}
+Commit:            $(git rev-parse HEAD)
+Commit (short):    $(git rev-parse --short HEAD)
+Build Date:        $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+Built By:          GitHub Actions
+Builder Run:       ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+Features:
+- Sleep-time memory obfuscation (Ekko/Hourglass technique)
+- Windows implant support
+- --sleep-obfuscation flag available
+
+SHA256 Checksums:
+$(cat checksums.txt)
+
+Usage in Dockerfile:
+-------------------
+ARG SLIVER_VERSION=sliver-aae-v1.0
+ARG SLIVER_SERVER_SHA256=$(sha256sum sliver-server | cut -d' ' -f1)
+ARG SLIVER_CLIENT_SHA256=$(sha256sum sliver-client | cut -d' ' -f1)
+
+RUN curl -fsSL "https://github.com/FKC-products/sliver/releases/download/\${SLIVER_VERSION}/sliver-server" \\
+     -o /usr/local/bin/sliver-server \\
+    && echo "\${SLIVER_SERVER_SHA256}  /usr/local/bin/sliver-server" | sha256sum -c - \\
+    && curl -fsSL "https://github.com/FKC-products/sliver/releases/download/\${SLIVER_VERSION}/sliver-client" \\
+     -o /usr/local/bin/sliver-client \\
+    && echo "\${SLIVER_CLIENT_SHA256}  /usr/local/bin/sliver-client" | sha256sum -c - \\
+    && chmod +x /usr/local/bin/sliver-*
+EOF
+
+          echo "=== Build Summary ==="
+          cat checksums.txt
+          echo ""
+          echo "=== Metadata ==="
+          cat metadata.txt
+
+      - name: Upload binaries as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sliver-${{ github.ref_name }}-binaries
+          path: |
+            sliver-server
+            sliver-client
+            checksums.txt
+            metadata.txt
+          retention-days: 90
+
+      - name: Create GitHub Release
+        if: github.event_name == 'push' || github.event_name == 'pull_request' || inputs.create_release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Determine release tag based on branch
+          if [ "${{ github.ref_name }}" = "aae-v1.0-sleep-obfuscation" ]; then
+            TAG="sliver-aae-v1.0"
+            TITLE="Sliver AAE v1.0 - Sleep Obfuscation"
+          else
+            TAG="sliver-$(git rev-parse --short HEAD)"
+            TITLE="Sliver Build - ${{ github.ref_name }}"
+          fi
+
+          echo "Creating release: $TAG"
+
+          # Check if release already exists
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists, deleting..."
+            gh release delete "$TAG" --yes
+          fi
+
+          # Create the release
+          gh release create "$TAG" \
+            --title "$TITLE" \
+            --notes-file metadata.txt \
+            sliver-server \
+            sliver-client \
+            checksums.txt
+
+          echo "✓ Release created: $TAG"
+          echo "📦 Download from: https://github.com/FKC-products/sliver/releases/tag/$TAG"
+
+      - name: Build summary
+        run: |
+          echo "### ✅ Sliver Build Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** $(git rev-parse --short HEAD)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**SHA256 Checksums:**" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat checksums.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ inputs.create_release }}" = "true" ]; then
+            if [ "${{ github.ref_name }}" = "aae-v1.0-sleep-obfuscation" ]; then
+              TAG="sliver-aae-v1.0"
+            else
+              TAG="sliver-$(git rev-parse --short HEAD)"
+            fi
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "📦 **Release:** https://github.com/FKC-products/sliver/releases/tag/$TAG" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "📦 Download artifacts to manually create release" >> $GITHUB_STEP_SUMMARY
+          fi
