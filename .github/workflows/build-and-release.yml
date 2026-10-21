@@ -11,10 +11,13 @@ on:
         options:
           - 'true'
           - 'false'
+  pull_request:
+    types: [labeled]
 
 jobs:
   build-sliver:
     runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'build-sliver'
 
     steps:
       - name: Free disk space
@@ -129,7 +132,7 @@ EOF
           retention-days: 90
 
       - name: Create GitHub Release
-        if: inputs.create_release == 'true'
+        if: github.event_name == 'pull_request' || inputs.create_release == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
