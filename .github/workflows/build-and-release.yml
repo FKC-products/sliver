@@ -13,11 +13,14 @@ on:
           - 'false'
   pull_request:
     types: [labeled]
+  push:
+    branches:
+      - aae-v1.0-sleep-obfuscation
 
 jobs:
   build-sliver:
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'build-sliver'
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'build-sliver' || github.event_name == 'push'
 
     steps:
       - name: Free disk space
@@ -132,7 +135,7 @@ EOF
           retention-days: 90
 
       - name: Create GitHub Release
-        if: github.event_name == 'pull_request' || inputs.create_release == 'true'
+        if: github.event_name == 'push' || github.event_name == 'pull_request' || inputs.create_release == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
