@@ -74,40 +74,24 @@ jobs:
           sha256sum sliver-server sliver-client > checksums.txt
 
           # Create metadata file
-          cat > metadata.txt <<EOF
-Sliver Binaries - AAE Custom Build
-===================================
-
-Source Repository: https://github.com/FKC-products/sliver
-Branch:            ${{ github.ref_name }}
-Commit:            $(git rev-parse HEAD)
-Commit (short):    $(git rev-parse --short HEAD)
-Build Date:        $(date -u +"%Y-%m-%d %H:%M:%S UTC")
-Built By:          GitHub Actions
-Builder Run:       ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-Features:
-- Sleep-time memory obfuscation (Ekko/Hourglass technique)
-- Windows implant support
-- --sleep-obfuscation flag available
-
-SHA256 Checksums:
-$(cat checksums.txt)
-
-Usage in Dockerfile:
--------------------
-ARG SLIVER_VERSION=sliver-aae-v1.0
-ARG SLIVER_SERVER_SHA256=$(sha256sum sliver-server | cut -d' ' -f1)
-ARG SLIVER_CLIENT_SHA256=$(sha256sum sliver-client | cut -d' ' -f1)
-
-RUN curl -fsSL "https://github.com/FKC-products/sliver/releases/download/\${SLIVER_VERSION}/sliver-server" \\
-     -o /usr/local/bin/sliver-server \\
-    && echo "\${SLIVER_SERVER_SHA256}  /usr/local/bin/sliver-server" | sha256sum -c - \\
-    && curl -fsSL "https://github.com/FKC-products/sliver/releases/download/\${SLIVER_VERSION}/sliver-client" \\
-     -o /usr/local/bin/sliver-client \\
-    && echo "\${SLIVER_CLIENT_SHA256}  /usr/local/bin/sliver-client" | sha256sum -c - \\
-    && chmod +x /usr/local/bin/sliver-*
-EOF
+          echo "Sliver Binaries - AAE Custom Build" > metadata.txt
+          echo "===================================" >> metadata.txt
+          echo "" >> metadata.txt
+          echo "Source Repository: https://github.com/FKC-products/sliver" >> metadata.txt
+          echo "Branch:            ${{ github.ref_name }}" >> metadata.txt
+          echo "Commit:            $(git rev-parse HEAD)" >> metadata.txt
+          echo "Commit (short):    $(git rev-parse --short HEAD)" >> metadata.txt
+          echo "Build Date:        $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> metadata.txt
+          echo "Built By:          GitHub Actions" >> metadata.txt
+          echo "Builder Run:       ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> metadata.txt
+          echo "" >> metadata.txt
+          echo "Features:" >> metadata.txt
+          echo "- Sleep-time memory obfuscation (Ekko/Hourglass technique)" >> metadata.txt
+          echo "- Windows implant support" >> metadata.txt
+          echo "- --sleep-obfuscation flag available" >> metadata.txt
+          echo "" >> metadata.txt
+          echo "SHA256 Checksums:" >> metadata.txt
+          cat checksums.txt >> metadata.txt
 
           echo "=== Build Summary ==="
           cat checksums.txt
@@ -127,7 +111,7 @@ EOF
           retention-days: 90
 
       - name: Create GitHub Release
-        if: github.event_name == 'push' || inputs.create_release == 'true'
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_release == 'true')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
