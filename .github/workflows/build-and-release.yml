@@ -166,12 +166,8 @@ EOF
           cat checksums.txt >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
-          if [ "${{ inputs.create_release }}" = "true" ]; then
-            if [ "${{ github.ref_name }}" = "aae-v1.0-sleep-obfuscation" ]; then
-              TAG="sliver-aae-v1.0"
-            else
-              TAG="sliver-$(git rev-parse --short HEAD)"
-            fi
+          if [ "${{ github.event_name }}" = "push" ] || [ "${{ inputs.create_release }}" = "true" ]; then
+            TAG="sliver-aae-v1.0"
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "📦 **Release:** https://github.com/FKC-products/sliver/releases/tag/$TAG" >> $GITHUB_STEP_SUMMARY
           else
