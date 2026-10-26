@@ -18,6 +18,9 @@ on:
 jobs:
   build-sliver:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
 
     steps:
       - name: Free disk space
@@ -53,20 +56,72 @@ jobs:
           ACTUAL_COMMIT=$(git rev-parse HEAD)
           echo "Building commit: $ACTUAL_COMMIT"
           echo "Branch: ${{ github.ref_name }}"
+          echo "Architecture: ${{ matrix.arch }}"
           echo "✓ Building Sliver with sleep obfuscation support"
 
-      - name: Build Sliver
+      - name: Build Sliver for ${{ matrix.arch }}
         run: |
-          echo "Building Sliver with sleep obfuscation support..."
-          make
+          echo "Building Sliver for linux/${{ matrix.arch }} with sleep obfuscation support..."
+          GOOS=linux GOARCH=${{ matrix.arch }} ARTIFACT_SUFFIX="_linux-${{ matrix.arch }}" make
 
           echo "✓ Build complete"
-          ls -lh sliver-server sliver-client
+          ls -lh sliver-server_linux-${{ matrix.arch }} sliver-client_linux-${{ matrix.arch }}
 
-      - name: Generate checksums and metadata
+      - name: Generate checksums
         run: |
           # Generate SHA256 checksums
-          sha256sum sliver-server sliver-client > checksums.txt
+          sha256sum sliver-server_linux-${{ matrix.arch }} sliver-client_linux-${{ matrix.arch }} > checksums-${{ matrix.arch }}.txt
+
+          echo "=== ${{ matrix.arch }} Checksums ==="
+          cat checksums-${{ matrix.arch }}.txt
+
+      - name: Upload binaries as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sliver-${{ github.ref_name }}-${{ matrix.arch }}
+          path: |
+            sliver-server_linux-${{ matrix.arch }}
+            sliver-client_linux-${{ matrix.arch }}
+            checksums-${{ matrix.arch }}.txt
+          retention-days: 90
+
+  create-release:
+    needs: build-sliver
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_release == 'true')
+
+    steps:
+      - name: Checkout Sliver
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Consolidate binaries
+        run: |
+          mkdir -p release
+
+          # Move all binaries to release directory
+          mv artifacts/sliver-${{ github.ref_name }}-amd64/sliver-server_linux-amd64 release/
+          mv artifacts/sliver-${{ github.ref_name }}-amd64/sliver-client_linux-amd64 release/
+          mv artifacts/sliver-${{ github.ref_name }}-arm64/sliver-server_linux-arm64 release/
+          mv artifacts/sliver-${{ github.ref_name }}-arm64/sliver-client_linux-arm64 release/
+
+          # Combine checksums
+          cat artifacts/sliver-${{ github.ref_name }}-amd64/checksums-amd64.txt > release/checksums.txt
+          cat artifacts/sliver-${{ github.ref_name }}-arm64/checksums-arm64.txt >> release/checksums.txt
+
+          echo "=== All binaries ==="
+          ls -lh release/
+          echo ""
+          echo "=== Combined checksums ==="
+          cat release/checksums.txt
+
+      - name: Generate metadata
+        run: |
+          cd release
 
           # Create metadata file
           echo "Sliver Binaries - AAE Custom Build" > metadata.txt
@@ -80,6 +135,10 @@ jobs:
           echo "Built By:          GitHub Actions" >> metadata.txt
           echo "Builder Run:       ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> metadata.txt
           echo "" >> metadata.txt
+          echo "Architectures:" >> metadata.txt
+          echo "- linux/amd64" >> metadata.txt
+          echo "- linux/arm64" >> metadata.txt
+          echo "" >> metadata.txt
           echo "Features:" >> metadata.txt
           echo "- Sleep-time memory obfuscation (Ekko/Hourglass technique)" >> metadata.txt
           echo "- Windows implant support" >> metadata.txt
@@ -88,31 +147,18 @@ jobs:
           echo "SHA256 Checksums:" >> metadata.txt
           cat checksums.txt >> metadata.txt
 
-          echo "=== Build Summary ==="
-          cat checksums.txt
-          echo ""
           echo "=== Metadata ==="
           cat metadata.txt
 
-      - name: Upload binaries as artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: sliver-${{ github.ref_name }}-binaries
-          path: |
-            sliver-server
-            sliver-client
-            checksums.txt
-            metadata.txt
-          retention-days: 90
-
       - name: Create GitHub Release
-        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_release == 'true')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          cd release
+
           # Building from master with sleep obfuscation
           TAG="sliver-aae-v1.0"
-          TITLE="Sliver AAE v1.0 - Sleep Obfuscation"
+          TITLE="Sliver AAE v1.0 - Sleep Obfuscation (Multi-Arch)"
 
           echo "Creating release: $TAG"
 
@@ -126,8 +172,10 @@ jobs:
           gh release create "$TAG" \
             --title "$TITLE" \
             --notes-file metadata.txt \
-            sliver-server \
-            sliver-client \
+            sliver-server_linux-amd64 \
+            sliver-client_linux-amd64 \
+            sliver-server_linux-arm64 \
+            sliver-client_linux-arm64 \
             checksums.txt
 
           echo "✓ Release created: $TAG"
@@ -135,21 +183,17 @@ jobs:
 
       - name: Build summary
         run: |
-          echo "### ✅ Sliver Build Complete" >> $GITHUB_STEP_SUMMARY
+          cd release
+
+          echo "### ✅ Sliver Multi-Arch Build Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
           echo "**Commit:** $(git rev-parse --short HEAD)" >> $GITHUB_STEP_SUMMARY
+          echo "**Architectures:** linux/amd64, linux/arm64" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**SHA256 Checksums:**" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           cat checksums.txt >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-
-          if [ "${{ github.event_name }}" = "push" ] || [ "${{ inputs.create_release }}" = "true" ]; then
-            TAG="sliver-aae-v1.0"
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "📦 **Release:** https://github.com/FKC-products/sliver/releases/tag/$TAG" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "📦 Download artifacts to manually create release" >> $GITHUB_STEP_SUMMARY
-          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📦 **Release:** https://github.com/FKC-products/sliver/releases/tag/sliver-aae-v1.0" >> $GITHUB_STEP_SUMMARY
