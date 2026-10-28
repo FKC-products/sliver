@@ -1,0 +1,5 @@
+# DNS session allocation requires a completed key exchange, and HTTP gzip
+# decode is size-limited. Trivy still reports these because an untagged build
+# embeds a v0.0.0 pseudo-version, which sorts below the fixed release tags.
+CVE-2026-25791
+GHSA-2phg-qgmm-r638

@@ -230,7 +230,7 @@ func Decrypt(key [chacha20poly1305.KeySize]byte, ciphertext []byte) ([]byte, err
 	if err != nil {
 		return nil, err
 	}
-	return encoders.GunzipBuf(plaintext), nil
+	return encoders.GunzipBuf(plaintext)
 }
 
 // NewCipherContext - Wrapper around creating a cipher context from a key

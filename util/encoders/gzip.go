@@ -63,12 +63,9 @@ func GzipBufBestCompression(data []byte) []byte {
 	return buf.Bytes()
 }
 
-// GunzipBuf - Gunzip a buffer
-func GunzipBuf(data []byte) []byte {
-	zip, _ := gzip.NewReader(bytes.NewBuffer(data))
-	var buf bytes.Buffer
-	buf.ReadFrom(zip)
-	return buf.Bytes()
+// GunzipBuf - Gunzip a buffer, rejecting output larger than DefaultMaxGzipDecodeLen.
+func GunzipBuf(data []byte) ([]byte, error) {
+	return Gzip{}.DecodeWithMaxLen(data, DefaultMaxGzipDecodeLen)
 }
 
 // Encode - Compress data with gzip

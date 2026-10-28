@@ -21,8 +21,13 @@ package encoders
 import (
 	"bytes"
 	"compress/gzip"
+	"fmt"
+	"io"
 	"sync"
 )
+
+// MaxGzipDecodeLen is the maximum decompressed size accepted by GzipEncoder.
+const MaxGzipDecodeLen int64 = 2 * 1024 * 1024 * 1024 // 2GB
 
 // Gzip - Gzip compression encoder
 type GzipEncoder struct{}
@@ -49,16 +54,24 @@ func (g GzipEncoder) Encode(data []byte) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// Decode - Uncompressed data with gzip
+// Decode - Uncompressed data with gzip, rejecting output larger than MaxGzipDecodeLen.
 func (g GzipEncoder) Decode(data []byte) ([]byte, error) {
 	reader, err := gzip.NewReader(bytes.NewReader(data))
 	if err != nil {
 		return nil, err
 	}
+	defer reader.Close()
+
+	limited := &io.LimitedReader{
+		R: reader,
+		N: MaxGzipDecodeLen + 1,
+	}
 	var buf bytes.Buffer
-	_, err = buf.ReadFrom(reader)
-	if err != nil {
+	if _, err = buf.ReadFrom(limited); err != nil {
 		return nil, err
+	}
+	if limited.N == 0 {
+		return nil, fmt.Errorf("gzip decoded payload exceeds %d bytes", MaxGzipDecodeLen)
 	}
 	return buf.Bytes(), nil
 }

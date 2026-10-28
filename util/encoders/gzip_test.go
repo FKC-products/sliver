@@ -52,7 +52,10 @@ func TestGzipGunzip(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		data := randomDataRandomSize(8192)
 		gzipData, _ := GzipBuf(data)
-		gunzipData := GunzipBuf(gzipData)
+		gunzipData, err := GunzipBuf(gzipData)
+		if err != nil {
+			t.Fatalf("gunzip failed: %v", err)
+		}
 		if !bytes.Equal(data, gunzipData) {
 			t.Fatalf("Data does not match")
 		}

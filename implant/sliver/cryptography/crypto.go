@@ -164,7 +164,7 @@ func Decrypt(key [chacha20poly1305.KeySize]byte, ciphertext []byte) ([]byte, err
 	if err != nil {
 		return nil, err
 	}
-	return gunzipBuf(plaintext), nil
+	return gunzipBuf(plaintext)
 }
 
 // NewCipherContext - Wrapper around creating a cipher context from a key
@@ -298,10 +298,26 @@ func gzipBuf(data []byte) []byte {
 	return buf.Bytes()
 }
 
-// gunzipBuf - Gunzip a buffer
-func gunzipBuf(data []byte) []byte {
-	zip, _ := gzip.NewReader(bytes.NewBuffer(data))
+const maxGzipDecodeLen int64 = 2 * 1024 * 1024 * 1024 // 2GB
+
+// gunzipBuf - Gunzip a buffer, rejecting output larger than maxGzipDecodeLen.
+func gunzipBuf(data []byte) ([]byte, error) {
+	reader, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+
+	limited := &io.LimitedReader{
+		R: reader,
+		N: maxGzipDecodeLen + 1,
+	}
 	var buf bytes.Buffer
-	buf.ReadFrom(zip)
-	return buf.Bytes()
+	if _, err = buf.ReadFrom(limited); err != nil {
+		return nil, err
+	}
+	if limited.N == 0 {
+		return nil, errors.New("gzip decoded payload exceeds max length")
+	}
+	return buf.Bytes(), nil
 }

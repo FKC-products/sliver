@@ -1377,15 +1377,23 @@ func gzipWrite(w io.Writer, data []byte) error {
 }
 
 func gzipRead(data []byte) ([]byte, error) {
-	//bytes.NewReader(data)
+	const maxGzipDecodeLen int64 = 2 * 1024 * 1024 * 1024 // 2GB
 	reader, err := gzip.NewReader(bytes.NewReader(data))
 	if err != nil {
 		return nil, err
 	}
+	defer reader.Close()
+
+	limited := &io.LimitedReader{
+		R: reader,
+		N: maxGzipDecodeLen + 1,
+	}
 	var buf bytes.Buffer
-	_, err = buf.ReadFrom(reader)
-	if err != nil {
+	if _, err = buf.ReadFrom(limited); err != nil {
 		return nil, err
+	}
+	if limited.N == 0 {
+		return nil, fmt.Errorf("gzip decoded payload exceeds %d bytes", maxGzipDecodeLen)
 	}
 	return buf.Bytes(), nil
 }

@@ -43,7 +43,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.26.10'
           cache: true
 
       - name: Install MinGW
@@ -66,6 +66,28 @@ jobs:
 
           echo "✓ Build complete"
           ls -lh sliver-server_linux-${{ matrix.arch }} sliver-client_linux-${{ matrix.arch }}
+
+      - name: Scan server binary
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: sliver-server_linux-${{ matrix.arch }}
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          trivyignores: .trivyignore
+
+      - name: Scan client binary
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: sliver-client_linux-${{ matrix.arch }}
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          trivyignores: .trivyignore
 
       - name: Generate checksums
         run: |

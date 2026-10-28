@@ -21,7 +21,6 @@ package loot
 import (
 	"archive/tar"
 	"bytes"
-	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
@@ -146,11 +145,12 @@ func LootDownload(download *sliverpb.Download, lootName string, fileType clientp
 		SendLootMessage(lootMessage, con)
 	} else {
 		// We have to decompress the gzip file first
-		decompressedDownload, err := gzip.NewReader(bytes.NewReader(download.Data))
+		decodedDownload, err := encoders.Gzip{}.DecodeWithMaxLen(download.Data, encoders.DefaultMaxGzipDecodeLen)
 		if err != nil {
 			con.PrintErrorf("Could not decompress downloaded data: %s", err)
 			return
 		}
+		decompressedDownload := bytes.NewReader(decodedDownload)
 
 		/*
 			Directories are stored as tar-ed gzip archives.
